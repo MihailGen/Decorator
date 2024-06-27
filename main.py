@@ -1,37 +1,60 @@
+import asyncio
+import hashlib
 from functools import wraps
 
 class Cache:
     def __init__(self):
         self.data = {}
 
+    def generate_key(self, func_name, args, kwargs):
+        key = f"{func_name}:{args}:{kwargs}"
+        return hashlib.md5(key.encode()).hexdigest()
+
     def __call__(self, func):
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        async def async_wrapper(*args, **kwargs):
+            if func.__name__ not in self.data:
+                self.data[func.__name__] = {}
+
+            # делаем ключ из аргументов
+            key = str(args) + str(kwargs)
+
             # Проверяем, есть ли результат в кэше,
             # eсли ecть, берем результат из кэш
-            if args in self.data:
-                result = self.data[args]
-                print(f"Результат из КЭШ: {result} для {func.__name__}")
+            if key in self.data[func.__name__]:
+                return self.data[func.__name__][key]
+
+            # поскольку функция асинхронная, ответ надо подождать
+            ans = await func(*args, *kwargs)
+            self.data[func.__name__][key] = ans
+            return ans
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            if func.__name__ not in self.data:
+                self.data[func.__name__] = {}
+
+            key = str(args) + str(kwargs)
+            # Проверяем, есть ли результат в кэше,
+            # eсли ecть, берем результат из кэш
+            if key in self.data[func.__name__]:
+                return self.data[func.__name__][key]
 
             # Если нет, вызываем функцию и сохраняем результат в кэш
-            else:
-                result = func(*args, **kwargs)
-                self.data[args] = result
-                print(f"Новый результат: {result} для {func.__name__}")
+            ans = func(*args, *kwargs)
+            self.data[func.__name__][key] = ans
+            return ans
 
-            # Возвращаем результат
-            return result
-            raise NotImplementedError("Заполните эту часть кода")
-        return wrapper
+        # Распознаём,асинхронная функция, или нет и в зависимости от этого выбираем враппер
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+
 
     def invalidate(self, func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-        # Инвалидируем кэш для функции
-            self.data.clear()
-            print(f"Кэш для функцмии {func.__name__} инвалидирован")
-            raise NotImplementedError("Заполните эту часть кода")
-        return wrapper
+        if func.__name__ in self.data:
+            del self.data[func.name]
 
 cache = Cache()
 
